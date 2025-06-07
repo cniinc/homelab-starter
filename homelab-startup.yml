@@ -1,0 +1,96 @@
+---
+- name: Homelab Startup Sequence
+  hosts: proxmox_host
+  gather_facts: false
+  vars:
+    truenas_vm_id: 100
+    truenas_ip: "192.168.50.100"
+    lxc_containers: [130, 600]
+    mount_timeout: 300
+    
+  tasks:
+    - name: Start TrueNAS VM
+      ansible.builtin.shell: |
+        qm start {{ truenas_vm_id }}
+      register: truenas_start
+      failed_when: 
+        - truenas_start.rc != 0
+        - "'already running' not in truenas_start.stderr"
+
+    - name: Wait for TrueNAS to be network accessible
+      ansible.builtin.wait_for:
+        host: "{{ truenas_ip }}"
+        port: 22
+        delay: 30
+        timeout: 300
+        msg: "TrueNAS did not become accessible within 5 minutes"
+
+    - name: Wait for SMB service to be ready
+      ansible.builtin.wait_for:
+        host: "{{ truenas_ip }}"
+        port: 445
+        delay: 10
+        timeout: 180
+        msg: "SMB service did not start within 3 minutes"
+
+    - name: Additional wait for TrueNAS services to fully initialize
+      ansible.builtin.pause:
+        seconds: 30
+
+    - name: Test SMB connectivity
+      ansible.builtin.shell: |
+        timeout 10 nc -z {{ truenas_ip }} 445
+      register: smb_test
+      retries: 6
+      delay: 10
+      until: smb_test.rc == 0
+
+    - name: Mount SMB shares
+      ansible.builtin.shell: |
+        mount -a -t cifs
+      register: mount_result
+      retries: 3
+      delay: 10
+      until: mount_result.rc == 0
+
+    - name: Verify mounts are successful
+      ansible.builtin.shell: |
+        findmnt -t cifs
+      register: mount_check
+      failed_when: mount_check.rc != 0
+
+    - name: Display mounted shares
+      ansible.builtin.debug:
+        msg: "Successfully mounted: {{ mount_check.stdout_lines }}"
+
+    - name: Start LXC containers
+      ansible.builtin.shell: |
+        pct start {{ item }}
+      register: lxc_start
+      failed_when: 
+        - lxc_start.rc != 0
+        - "'already running' not in lxc_start.stderr"
+      loop: "{{ lxc_containers }}"
+
+    - name: Wait for LXC containers to be ready
+      ansible.builtin.pause:
+        seconds: 15
+
+    - name: Verify LXC containers are running
+      ansible.builtin.shell: |
+        pct status {{ item }}
+      register: lxc_status
+      loop: "{{ lxc_containers }}"
+
+    - name: Display LXC status
+      ansible.builtin.debug:
+        msg: "Container {{ item.item }}: {{ item.stdout }}"
+      loop: "{{ lxc_status.results }}"
+
+    - name: Final status summary
+      ansible.builtin.debug:
+        msg: |
+          Homelab startup completed successfully:
+          - TrueNAS VM {{ truenas_vm_id }} is running
+          - SMB shares are mounted
+          - LXC containers {{ lxc_containers | join(', ') }} are running
