@@ -93,13 +93,21 @@
       delay: 10
       until: smb_test.rc == 0
 
-    - name: Mount SMB shares
+    - name: Mount mediavault SMB share
       ansible.builtin.shell: |
-        mount -a -t cifs
-      register: mount_result
+        mount /mnt/mediavault
+      register: mount_mediavault
       retries: 3
-      delay: 10
-      until: mount_result.rc == 0
+      delay: 5
+      until: mount_mediavault.rc == 0
+
+    - name: Mount photovault SMB share
+      ansible.builtin.shell: |
+        mount /mnt/photovault
+      register: mount_photovault
+      retries: 3
+      delay: 5
+      until: mount_photovault.rc == 0
 
     - name: Verify mounts are successful
       ansible.builtin.shell: |
