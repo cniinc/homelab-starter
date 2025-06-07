@@ -25,15 +25,15 @@
     - name: Wait for TrueNAS to be network accessible
       ansible.builtin.wait_for:
         host: "{{ truenas_ip }}"
-        port: 22
+        port: 80
         delay: 30
         timeout: 300
-        msg: "TrueNAS did not become accessible within 5 minutes"
+        msg: "TrueNAS web interface did not become accessible within 5 minutes"
       register: network_wait
       
     - name: Display network wait result
       ansible.builtin.debug:
-        msg: "TrueNAS network accessible after {{ network_wait.elapsed }} seconds"
+        msg: "TrueNAS web interface accessible after {{ network_wait.elapsed }} seconds"
 
     - name: Wait for SMB service to be ready
       ansible.builtin.wait_for:
