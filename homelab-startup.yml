@@ -16,6 +16,11 @@
       failed_when: 
         - truenas_start.rc != 0
         - "'already running' not in truenas_start.stderr"
+        - "'already running' not in truenas_start.stdout"
+      
+    - name: Display TrueNAS start result
+      ansible.builtin.debug:
+        msg: "TrueNAS start result: {{ truenas_start.stdout }} {{ truenas_start.stderr }}"
 
     - name: Wait for TrueNAS to be network accessible
       ansible.builtin.wait_for:
@@ -24,6 +29,11 @@
         delay: 30
         timeout: 300
         msg: "TrueNAS did not become accessible within 5 minutes"
+      register: network_wait
+      
+    - name: Display network wait result
+      ansible.builtin.debug:
+        msg: "TrueNAS network accessible after {{ network_wait.elapsed }} seconds"
 
     - name: Wait for SMB service to be ready
       ansible.builtin.wait_for:
@@ -32,10 +42,48 @@
         delay: 10
         timeout: 180
         msg: "SMB service did not start within 3 minutes"
+      register: smb_wait
+      
+    - name: Display SMB wait result
+      ansible.builtin.debug:
+        msg: "SMB service ready after {{ smb_wait.elapsed }} seconds"
 
     - name: Additional wait for TrueNAS services to fully initialize
-      ansible.builtin.pause:
-        seconds: 30
+      ansible.builtin.debug:
+        msg: "Waiting 30 seconds for TrueNAS services to fully initialize..."
+        
+    - name: TrueNAS initialization countdown
+      ansible.builtin.shell: |
+        total_wait=30
+        echo "Starting ${total_wait}-second wait for TrueNAS initialization..."
+        
+        if [ $total_wait -gt 120 ]; then
+          # For waits over 2 minutes, show every 60 seconds + final 10 seconds
+          interval=60
+          for i in $(seq $total_wait -$interval 1); do
+            if [ $i -gt 10 ]; then
+              echo "  $i seconds remaining..."
+              sleep $interval
+            else
+              break
+            fi
+          done
+          # Show final 10 seconds
+          for i in {10..1}; do
+            echo "  $i seconds remaining..."
+            sleep 1
+          done
+        else
+          # For shorter waits, show every 10 seconds + final 5 seconds  
+          for i in $(seq $total_wait -1 1); do
+            if [ $((i % 10)) -eq 0 ] || [ $i -le 5 ]; then
+              echo "  $i seconds remaining..."
+            fi
+            sleep 1
+          done
+        fi
+        
+        echo "TrueNAS initialization wait complete!"
 
     - name: Test SMB connectivity
       ansible.builtin.shell: |
@@ -70,7 +118,13 @@
       failed_when: 
         - lxc_start.rc != 0
         - "'already running' not in lxc_start.stderr"
+        - "'already running' not in lxc_start.stdout"
       loop: "{{ lxc_containers }}"
+      
+    - name: Display LXC start results
+      ansible.builtin.debug:
+        msg: "Container {{ item.item }}: {{ item.stdout }} {{ item.stderr }}"
+      loop: "{{ lxc_start.results }}"
 
     - name: Wait for LXC containers to be ready
       ansible.builtin.pause:
